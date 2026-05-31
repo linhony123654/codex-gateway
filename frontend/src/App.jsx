@@ -145,7 +145,7 @@ function Dashboard({ token, onLogout }) {
   const [editing, setEditing] = useState(null)
   const [tab, setTab] = useState('codex')
   const [page, setPage] = useState('manage') // manage | stats
-  const [form, setForm] = useState({ id: '', name: '', baseUrl: '', apiKey: '', models: '', anthropicUrl: '', claudeModel: '' })
+  const [form, setForm] = useState({ id: '', name: '', baseUrl: '', apiKey: '', models: '', anthropicUrl: '', claudeModel: '', codexYolo: false, claudeBypass: true })
   const [status, setStatus] = useState(null)
   const [usage, setUsage] = useState(null)
   const [mounted, setMounted] = useState(false)
@@ -203,12 +203,18 @@ function Dashboard({ token, onLogout }) {
   function handleEdit(id) {
     const p = config.providers[id]
     setEditing(id)
-    setForm({ id, name: p.name, baseUrl: p.baseUrl || '', apiKey: p.apiKey || '', models: (p.models || []).join(', '), anthropicUrl: p.anthropicUrl || '', claudeModel: p.claudeModel || '' })
+    setForm({
+      id, name: p.name, baseUrl: p.baseUrl || '', apiKey: p.apiKey || '', models: (p.models || []).join(', '),
+      anthropicUrl: p.anthropicUrl || '', claudeModel: p.claudeModel || '',
+      codexYolo: p.codexYolo || false, claudeBypass: p.claudeBypass !== false,
+      kimiBaseUrl: p.kimiBaseUrl || '', kimiApiKey: p.kimiApiKey || '', kimiModel: p.kimiModel || '', kimiYolo: p.kimiYolo || false,
+      kimiOAuth: p.kimiOAuth || false
+    })
   }
 
   function handleNew() {
     setEditing('new')
-    setForm({ id: '', name: '', baseUrl: '', apiKey: '', models: '', anthropicUrl: '', claudeModel: '' })
+    setForm({ id: '', name: '', baseUrl: '', apiKey: '', models: '', anthropicUrl: '', claudeModel: '', codexYolo: false, claudeBypass: true, kimiBaseUrl: '', kimiApiKey: '', kimiModel: '', kimiYolo: false, kimiOAuth: false })
   }
 
   async function handleSave() {
@@ -218,6 +224,12 @@ function Dashboard({ token, onLogout }) {
       models: form.models.split(',').map(m => m.trim()).filter(Boolean),
       anthropicUrl: form.anthropicUrl.replace(/\/+$/, '') || undefined,
       claudeModel: form.claudeModel || undefined,
+      codexYolo: form.codexYolo, claudeBypass: form.claudeBypass,
+      kimiBaseUrl: form.kimiOAuth ? undefined : (form.kimiBaseUrl?.replace(/\/+$/, '') || undefined),
+      kimiApiKey: form.kimiOAuth ? undefined : (form.kimiApiKey || undefined),
+      kimiModel: form.kimiModel || undefined,
+      kimiYolo: form.kimiYolo || false,
+      kimiOAuth: form.kimiOAuth || false,
     }
     if (editing === 'new') {
       await fetch(`${API}/providers`, { method: 'POST', headers, body: JSON.stringify(data) })
@@ -252,7 +264,14 @@ function Dashboard({ token, onLogout }) {
   }
 
   const isCodex = tab === 'codex'
-  const providers = Object.entries(config.providers).filter(([, p]) => isCodex ? p.baseUrl : p.anthropicUrl)
+  const isClaude = tab === 'claude'
+  const isKimi = tab === 'kimi'
+  const providers = Object.entries(config.providers).filter(([, p]) => {
+    if (isCodex) return p.baseUrl
+    if (isClaude) return p.anthropicUrl
+    if (isKimi) return p.kimiModel
+    return false
+  })
 
   return (
     <div style={{ minHeight: '100vh', background: v.bg, color: v.text, fontFamily: v.body }}>
@@ -353,15 +372,15 @@ function Dashboard({ token, onLogout }) {
         </nav>
         {page === 'manage' && (
           <nav style={{ display: 'flex', justifyContent: 'center', borderTop: `1px solid ${v.borderLight}` }}>
-            {['codex', 'claude'].map(t => (
-              <button key={t} onClick={() => { setTab(t); setEditing(null) }} style={{
-                padding: '10px 28px', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase',
+            {[{id: 'codex', label: 'Codex CLI'}, {id: 'claude', label: 'Claude Code'}, {id: 'kimi', label: 'Kimi CLI'}].map(t => (
+              <button key={t.id} onClick={() => { setTab(t.id); setEditing(null) }} style={{
+                padding: '10px 24px', fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
                 cursor: 'pointer', background: 'none', border: 'none', fontFamily: v.mono,
-                color: tab === t ? v.accent : v.textMuted,
-                borderBottom: tab === t ? `2px solid ${v.accent}` : '2px solid transparent',
+                color: tab === t.id ? v.accent : v.textMuted,
+                borderBottom: tab === t.id ? `2px solid ${v.accent}` : '2px solid transparent',
                 transition: 'all 0.3s',
               }}>
-                {t === 'codex' ? 'Codex CLI' : 'Claude Code'}
+                {t.label}
               </button>
             ))}
           </nav>
@@ -400,17 +419,45 @@ function Dashboard({ token, onLogout }) {
                 <div><label style={lbl}>ID</label><input value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} placeholder="xiaomi" disabled={editing !== 'new'} style={inp} /></div>
                 <div><label style={lbl}>名称</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="小米 MiMo" style={inp} /></div>
               </div>
-              {isCodex ? (
+              {isCodex && (
                 <>
                   <div><label style={lbl}>OpenAI Base URL</label><input value={form.baseUrl} onChange={e => setForm({ ...form, baseUrl: e.target.value })} placeholder="https://api.example.com/v1" style={inp} /></div>
                   <div><label style={lbl}>API Key</label><input value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." type="password" style={inp} /></div>
                   <div><label style={lbl}>模型（逗号分隔）</label><input value={form.models} onChange={e => setForm({ ...form, models: e.target.value })} placeholder="model-a, model-b" style={inp} /></div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: v.textLight }}>
+                    <input type="checkbox" checked={form.codexYolo} onChange={e => setForm({ ...form, codexYolo: e.target.checked })} style={{ width: 16, height: 16, accentColor: v.accent }} />
+                    YOLO 模式（自动执行所有命令，无需确认）
+                  </label>
                 </>
-              ) : (
+              )}
+              {isClaude && (
                 <>
                   <div><label style={lbl}>Anthropic Base URL</label><input value={form.anthropicUrl} onChange={e => setForm({ ...form, anthropicUrl: e.target.value })} placeholder="https://api.example.com/anthropic" style={inp} /></div>
                   <div><label style={lbl}>API Key</label><input value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." type="password" style={inp} /></div>
                   <div><label style={lbl}>Claude Model</label><input value={form.claudeModel} onChange={e => setForm({ ...form, claudeModel: e.target.value })} placeholder="model-name[1m]" style={inp} /></div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: v.textLight }}>
+                    <input type="checkbox" checked={form.claudeBypass} onChange={e => setForm({ ...form, claudeBypass: e.target.checked })} style={{ width: 16, height: 16, accentColor: v.accent }} />
+                    Bypass Permissions（跳过权限确认）
+                  </label>
+                </>
+              )}
+              {isKimi && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: v.textLight, marginBottom: 8 }}>
+                    <input type="checkbox" checked={form.kimiOAuth || false} onChange={e => setForm({ ...form, kimiOAuth: e.target.checked })} style={{ width: 16, height: 16, accentColor: v.accent }} />
+                    使用 Kimi OAuth（官方平台，需 /login 认证）
+                  </label>
+                  {!form.kimiOAuth && (
+                    <>
+                      <div><label style={lbl}>API Base URL</label><input value={form.kimiBaseUrl || ''} onChange={e => setForm({ ...form, kimiBaseUrl: e.target.value })} placeholder="https://api.example.com/v1" style={inp} /></div>
+                      <div><label style={lbl}>API Key</label><input value={form.kimiApiKey || ''} onChange={e => setForm({ ...form, kimiApiKey: e.target.value })} placeholder="sk-..." type="password" style={inp} /></div>
+                    </>
+                  )}
+                  <div><label style={lbl}>Model</label><input value={form.kimiModel || ''} onChange={e => setForm({ ...form, kimiModel: e.target.value })} placeholder={form.kimiOAuth ? "kimi-code/kimi-for-coding" : "deepseek-v4-pro"} style={inp} /></div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: v.textLight }}>
+                    <input type="checkbox" checked={form.kimiYolo || false} onChange={e => setForm({ ...form, kimiYolo: e.target.checked })} style={{ width: 16, height: 16, accentColor: v.accent }} />
+                    YOLO 模式（自动执行所有命令，无需确认）
+                  </label>
                 </>
               )}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
@@ -422,14 +469,16 @@ function Dashboard({ token, onLogout }) {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
-          <span style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: v.textMuted, fontFamily: v.mono, whiteSpace: 'nowrap' }}>{isCodex ? 'Codex CLI' : 'Claude Code'}</span>
+          <span style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', color: v.textMuted, fontFamily: v.mono, whiteSpace: 'nowrap' }}>{isCodex ? 'Codex CLI' : isClaude ? 'Claude Code' : 'Kimi CLI'}</span>
           <div style={{ flex: 1, height: 1, background: v.border }} />
           <span style={{ fontSize: 11, color: v.textMuted, fontFamily: v.mono }}>{providers.length}</span>
         </div>
 
         {/* Active provider first, then expand button, then others */}
         {(() => {
-          const activeId = isCodex
+          const activeId = isKimi
+            ? (status?.activeKimi || config.activeProvider)
+            : isCodex
             ? (status?.activeCodex || config.activeProvider)
             : (status?.activeClaude || config.activeProvider)
           const activeEntry = providers.find(([id]) => id === activeId)
@@ -438,7 +487,7 @@ function Dashboard({ token, onLogout }) {
           return (
             <div style={{ display: 'grid', gap: 18 }}>
               {/* Active provider */}
-              {activeEntry && <ProviderCard id={activeEntry[0]} p={activeEntry[1]} active={true} isCodex={isCodex} onActivate={handleActivate} onEdit={handleEdit} onDelete={handleDelete} />}
+              {activeEntry && <ProviderCard id={activeEntry[0]} p={activeEntry[1]} active={true} isCodex={isCodex} isClaude={isClaude} isKimi={isKimi} onActivate={handleActivate} onEdit={handleEdit} onDelete={handleDelete} />}
 
               {/* Expand button */}
               {otherEntries.length > 0 && (
@@ -458,7 +507,7 @@ function Dashboard({ token, onLogout }) {
 
               {/* Other providers */}
               {expanded && otherEntries.map(([id, p], i) => (
-                <ProviderCard key={id} id={id} p={p} active={false} isCodex={isCodex} onActivate={handleActivate} onEdit={handleEdit} onDelete={handleDelete} />
+                <ProviderCard key={id} id={id} p={p} active={false} isCodex={isCodex} isClaude={isClaude} isKimi={isKimi} onActivate={handleActivate} onEdit={handleEdit} onDelete={handleDelete} />
               ))}
             </div>
           )
@@ -496,7 +545,15 @@ function Dashboard({ token, onLogout }) {
 }
 
 // ── Provider Card ──
-function ProviderCard({ id, p, active, isCodex, onActivate, onEdit, onDelete }) {
+function ProviderCard({ id, p, active, isCodex, isClaude, isKimi, onActivate, onEdit, onDelete }) {
+  const getType = () => isKimi ? 'kimi' : isClaude ? 'claude' : 'codex'
+  const getEndpoint = () => isKimi ? (p.kimiOAuth ? 'Kimi OAuth' : p.kimiBaseUrl) : isCodex ? p.baseUrl : p.anthropicUrl
+  const getApiKey = () => isKimi ? (p.kimiOAuth ? 'OAuth' : (p.kimiApiKey || p.apiKey)) : p.apiKey
+  const getModel = () => isKimi ? p.kimiModel : isCodex ? null : p.claudeModel
+  const hasYolo = isKimi ? p.kimiYolo : isCodex ? p.codexYolo : false
+  const hasBypass = isClaude && p.claudeBypass !== false
+  const isOAuth = isKimi && p.kimiOAuth
+
   return (
     <div style={{ background: v.bgCard, border: `1px solid ${active ? v.accent : v.border}`, position: 'relative', animation: 'fadeUp 0.4s ease', transition: 'border-color 0.3s' }}>
       {active && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${v.accent}, ${v.accent}88)` }} />}
@@ -505,24 +562,27 @@ function ProviderCard({ id, p, active, isCodex, onActivate, onEdit, onDelete }) 
           <div>
             <h3 style={{ fontFamily: v.serif, fontSize: 22, fontWeight: 400, marginBottom: 2 }}>{p.name}</h3>
             {active && <span style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: v.accent, fontFamily: v.mono }}>● Active</span>}
+            {isOAuth && <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: '#4682b4', fontFamily: v.mono, marginLeft: 8, padding: '2px 6px', border: '1px solid #4682b440' }}>OAuth</span>}
+            {hasYolo && <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: '#9b2c2c', fontFamily: v.mono, marginLeft: 8, padding: '2px 6px', border: '1px solid #9b2c2c40' }}>YOLO</span>}
+            {hasBypass && <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: '#9b2c2c', fontFamily: v.mono, marginLeft: 8, padding: '2px 6px', border: '1px solid #9b2c2c40' }}>BYPASS</span>}
           </div>
           <div className="card-actions" style={{ display: 'flex', gap: 6 }}>
-            {!active && <button onClick={() => onActivate(id, isCodex ? 'codex' : 'claude')} style={btnAccent}>激活</button>}
+            {!active && <button onClick={() => onActivate(id, getType())} style={btnAccent}>激活</button>}
             <button onClick={() => onEdit(id)} style={btnGhost}>编辑</button>
-            <button onClick={() => onDelete(id, isCodex ? 'codex' : 'claude')} style={btnDanger}>删除</button>
+            <button onClick={() => onDelete(id, getType())} style={btnDanger}>删除</button>
           </div>
         </div>
         <div style={{ height: 1, background: v.borderLight, marginBottom: 16 }} />
         <div className="meta-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 14 }}>
-          <Meta label="Endpoint" value={isCodex ? p.baseUrl : p.anthropicUrl} />
-          <Meta label="API Key" value={`${p.apiKey.slice(0, 10)}${'·'.repeat(6)}${p.apiKey.slice(-4)}`} />
+          <Meta label="Endpoint" value={getEndpoint()} />
+          <Meta label="API Key" value={`${getApiKey()?.slice(0, 10) || ''}${'·'.repeat(6)}${getApiKey()?.slice(-4) || ''}`} />
           <div style={{ gridColumn: '1 / -1' }}>
             <span style={metaLbl}>{isCodex ? 'Models' : 'Model'}</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
               {isCodex ? (
                 (p.models || []).map(m => <span key={m} style={{ background: v.bg, border: `1px solid ${v.border}`, padding: '4px 12px', fontSize: 12, fontFamily: v.mono, color: v.textLight }}>{m}</span>)
               ) : (
-                <span style={{ background: v.bg, border: `1px solid ${v.border}`, padding: '4px 12px', fontSize: 12, fontFamily: v.mono, color: v.textLight }}>{p.claudeModel}</span>
+                <span style={{ background: v.bg, border: `1px solid ${v.border}`, padding: '4px 12px', fontSize: 12, fontFamily: v.mono, color: v.textLight }}>{getModel()}</span>
               )}
             </div>
           </div>
